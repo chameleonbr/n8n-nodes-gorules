@@ -1,33 +1,49 @@
-import type {
+import {
 	IExecuteFunctions,
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
+	IDataObject,
 } from 'n8n-workflow';
 import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
+import { ZenEngine } from '@gorules/zen-engine';
 
-export class ExampleNode implements INodeType {
+export class GorulesNode implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Example Node',
-		name: 'exampleNode',
+		displayName: 'Gorules',
+		icon: 'file:logo.svg',
+		name: 'gorulesNode',
 		group: ['transform'],
 		version: 1,
-		description: 'Basic Example Node',
+		description: 'Gorules Runner',
 		defaults: {
-			name: 'Example Node',
+			name: 'Gorules Node',
 		},
 		inputs: [NodeConnectionType.Main],
 		outputs: [NodeConnectionType.Main],
 		properties: [
-			// Node properties which the user gets displayed and
-			// can change on the node.
 			{
-				displayName: 'My String',
-				name: 'myString',
+				displayName: 'Gorules JSON Data',
+				name: 'jsonData',
 				type: 'string',
-				default: '',
-				placeholder: 'Placeholder value',
-				description: 'The description text',
+				default: '{}',
+				required: true,
+				description: 'Please enter the JSON data',
+			},
+			{
+				displayName: 'Payload',
+				name: 'payload',
+				type: 'string',
+				default: '{{ $json }}',
+				requiresDataPath: 'single',
+				placeholder: 'Payload Object'
+			},
+			{
+				displayName: 'Trace',
+				name: 'trace',
+				type: 'boolean',
+				default: false,
+				placeholder: 'Trace'
 			},
 		],
 	};
@@ -37,20 +53,40 @@ export class ExampleNode implements INodeType {
 	// with whatever the user has entered.
 	// You can make async calls and use `await`.
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+
+		let data: any;
+
+		const jsonData = this.getNodeParameter('jsonData', 0) as string;
+		data = JSON.parse(jsonData);
+
+		const engine = new ZenEngine();
+
+		const trace = this.getNodeParameter('trace', 0, false) as boolean;
+
+		const decision = engine.createDecision(data);
+
 		const items = this.getInputData();
 
 		let item: INodeExecutionData;
-		let myString: string;
-
 		// Iterates over all input items and add the key "myString" with the
 		// value the parameter "myString" resolves to.
 		// (This could be a different value for each item in case it contains an expression)
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			try {
-				myString = this.getNodeParameter('myString', itemIndex, '') as string;
-				item = items[itemIndex];
 
-				item.json.myString = myString;
+				let sendPayload  = {};
+
+				const payload = this.getNodeParameter('payload', itemIndex, '') as IDataObject;
+
+				if (payload) {
+					sendPayload = JSON.parse(payload.toString());
+				}else{
+					sendPayload = items[itemIndex].json;
+				}
+
+				let data = await decision.evaluate(sendPayload, { trace }) as unknown as IDataObject;
+				item = items[itemIndex];
+				item.json = data;
 			} catch (error) {
 				// This node should never fail but we want to showcase how
 				// to handle errors.
